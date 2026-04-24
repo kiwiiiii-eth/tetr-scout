@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "TETR Scout",
+  "version": "0.1.0",
+  "description": "Show public TETR.IO league summaries and recent form for visible players on tetr.io.",
+  "host_permissions": [
+    "https://tetr.io/*",
+    "https://ch.tetr.io/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://tetr.io/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "page-bridge.js"
+      ],
+      "matches": [
+        "https://tetr.io/*"
+      ]
+    }
+  ],
+  "action": {
+    "default_title": "TETR Scout"
+  }
+}

@@ -1,0 +1,11 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+*.swp
+*.swo
+
+extension.crx
+extension.pem
+extension.zip
+
+output/
