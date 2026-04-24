@@ -86,6 +86,120 @@ const STOP_WORDS = new Set([
   "XP",
   "ZEN"
 ]);
+const UI_LANG = (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en";
+const UI_LOCALE = UI_LANG === "zh" ? "zh-TW" : "en-US";
+const I18N = {
+  zh: {
+    toggle_title: "切換 TETR Scout",
+    panel_title: "公開玩家快照",
+    panel_subtitle: "預設精簡模式，避免遮住對戰資訊。",
+    close: "關閉",
+    more: "更多",
+    less: "收起",
+    username_placeholder: "輸入或選擇玩家名稱",
+    analyze: "分析",
+    candidate_usernames: "候選玩家名稱",
+    invalid_username: "請輸入有效的玩家名稱。",
+    fetch_failed: "抓取玩家資料失敗。",
+    loading: "正在載入 {name}...",
+    showing: "目前顯示 {name}",
+    idle: "請選擇畫面上的玩家，或手動輸入名稱。",
+    no_candidates: "目前還沒有高可信度名稱。等頁面資料進來，或直接手動輸入。",
+    candidate_title: "信心 {score} · DOM {dom} · 網路 {network}",
+    source_dom: "DOM",
+    source_network: "網路",
+    source_network_dom: "網路+DOM",
+    empty_title: "這個面板會顯示什麼",
+    empty_item_1: "目前牌位、TR、生涯勝率、APM/PPS/VS",
+    empty_item_2: "從公開 leagueflow 推出的近 20 / 50 場趨勢",
+    empty_item_3: "最近對戰列表與逐局韌性指標",
+    empty_item_4: "候選名稱會優先採用 live 頁面的網路資料，而不是靜態 UI 文字",
+    empty_item_5: "如果名字還是抓不到，可以手動輸入",
+    rank: "牌位",
+    lifetime_wr: "生涯勝率",
+    last_20: "近 20 場",
+    streak: "連續紀錄",
+    form_note: "近況 {form}",
+    wins_note: "{wins}/{games} 勝",
+    tr_note: "TR {tr}",
+    apm_pps_vs: "APM / PPS / VS",
+    summary_stats_note: "目前 summary 數值",
+    comeback_0_2: "0:2 翻盤",
+    samples_note: "{count} 筆",
+    country_hidden: "未公開國家",
+    public_league_data: "公開聯盟資料",
+    round_level_read: "逐局讀值",
+    after_round1_loss: "第 1 局先輸後",
+    after_round1_win: "第 1 局先贏後",
+    best_streaks: "最佳連續紀錄",
+    compact_mode: "精簡模式",
+    compact_hint: "只有在需要圖表或對戰歷史時再開 More。面板在 active match 期間會自動收起。",
+    rolling_win_rate: "滾動勝率",
+    tr_trend: "TR 走勢",
+    recent_match_list: "近期對戰列表",
+    chart_not_enough: "目前公開資料不足，還畫不出這張圖。",
+    chart_latest: "最新值：{value}",
+    recent_records_empty: "公開 API 沒有回傳近期對戰 records。",
+    unknown: "未知",
+    score_label: "比分",
+    na: "n/a"
+  },
+  en: {
+    toggle_title: "Toggle TETR Scout",
+    panel_title: "Public Player Snapshot",
+    panel_subtitle: "Compact by default so it does not cover active match information.",
+    close: "Close",
+    more: "More",
+    less: "Less",
+    username_placeholder: "Enter or pick a username",
+    analyze: "Analyze",
+    candidate_usernames: "Candidate Usernames",
+    invalid_username: "Enter a valid username.",
+    fetch_failed: "Failed to fetch player data.",
+    loading: "Loading {name}...",
+    showing: "Showing {name}",
+    idle: "Select a visible player or type a username.",
+    no_candidates: "No strong usernames yet. Wait for page data, or type one manually.",
+    candidate_title: "Confidence {score} · DOM {dom} · Network {network}",
+    source_dom: "DOM",
+    source_network: "Network",
+    source_network_dom: "Network+DOM",
+    empty_title: "What this panel shows",
+    empty_item_1: "Current rank, TR, lifetime win rate, APM/PPS/VS",
+    empty_item_2: "Last 20 and 50 match trend from public leagueflow",
+    empty_item_3: "Recent match list and round-level resilience from public records",
+    empty_item_4: "Candidate names prefer network data from the live page over static UI text",
+    empty_item_5: "If a name is still missing, type it manually",
+    rank: "Rank",
+    lifetime_wr: "Lifetime WR",
+    last_20: "Last 20",
+    streak: "Streak",
+    form_note: "Form {form}",
+    wins_note: "{wins}/{games} wins",
+    tr_note: "TR {tr}",
+    apm_pps_vs: "APM / PPS / VS",
+    summary_stats_note: "Current summary stats",
+    comeback_0_2: "0-2 comeback",
+    samples_note: "{count} samples",
+    country_hidden: "country hidden",
+    public_league_data: "public league data",
+    round_level_read: "Round-Level Read",
+    after_round1_loss: "After dropping round 1",
+    after_round1_win: "After winning round 1",
+    best_streaks: "Best streaks",
+    compact_mode: "Compact Mode",
+    compact_hint: "Open More only when you need charts or match history. The panel auto-hides during active matches.",
+    rolling_win_rate: "Rolling Win Rate",
+    tr_trend: "TR Trend",
+    recent_match_list: "Recent Match List",
+    chart_not_enough: "Not enough public data for this chart yet.",
+    chart_latest: "Latest: {value}",
+    recent_records_empty: "No recent records returned by the public API.",
+    unknown: "unknown",
+    score_label: "score",
+    na: "n/a"
+  }
+};
 
 const state = {
   selectedUsername: "",
@@ -113,6 +227,12 @@ const state = {
 
 bootstrap();
 
+function t(key, vars = {}) {
+  const table = I18N[UI_LANG] || I18N.en;
+  const raw = table[key] || I18N.en[key] || key;
+  return raw.replace(/\{(\w+)\}/g, (_match, name) => String(vars[name] ?? ""));
+}
+
 function bootstrap() {
   const existingHost = document.getElementById(ROOT_ID);
   if (existingHost) {
@@ -129,7 +249,7 @@ function bootstrap() {
   shadow.innerHTML = `
     <style>${buildStyles()}</style>
     <aside class="shell">
-      <button class="toggle" type="button" title="Toggle TETR Scout">
+      <button class="toggle" type="button" title="${escapeHtml(t("toggle_title"))}">
         <span class="toggle-ring"></span>
         <span class="toggle-label">TS</span>
       </button>
@@ -137,20 +257,20 @@ function bootstrap() {
         <header class="hero">
           <div>
             <div class="eyebrow">TETR Scout</div>
-            <h1>Public Player Snapshot</h1>
-            <p>Compact by default so it does not cover active match information.</p>
+            <h1>${escapeHtml(t("panel_title"))}</h1>
+            <p>${escapeHtml(t("panel_subtitle"))}</p>
           </div>
           <div class="panel-actions">
-            <button class="ghost-button details-toggle" type="button">More</button>
-            <button class="ghost-button close-button" type="button" aria-label="Close">×</button>
+            <button class="ghost-button details-toggle" type="button">${escapeHtml(t("more"))}</button>
+            <button class="ghost-button close-button" type="button" aria-label="${escapeHtml(t("close"))}">×</button>
           </div>
         </header>
         <div class="controls">
-          <input class="username-input" type="text" placeholder="Enter or pick a username" spellcheck="false" />
-          <button class="analyze-button" type="button">Analyze</button>
+          <input class="username-input" type="text" placeholder="${escapeHtml(t("username_placeholder"))}" spellcheck="false" />
+          <button class="analyze-button" type="button">${escapeHtml(t("analyze"))}</button>
         </div>
         <div class="section">
-          <div class="section-title">Candidate Usernames</div>
+          <div class="section-title">${escapeHtml(t("candidate_usernames"))}</div>
           <div class="candidate-list"></div>
         </div>
         <div class="status"></div>
@@ -577,7 +697,7 @@ function isVisible(element) {
 async function analyzeUsername(username, shadow, options = {}) {
   const normalized = normalizeCandidate(username);
   if (!normalized) {
-    state.error = "Enter a valid username.";
+    state.error = t("invalid_username");
     render(shadow);
     return;
   }
@@ -601,7 +721,7 @@ async function analyzeUsername(username, shadow, options = {}) {
 
   state.loading = false;
   if (!response?.ok) {
-    state.error = response?.error || "Failed to fetch player data.";
+    state.error = response?.error || t("fetch_failed");
     state.payload = null;
     render(shadow);
     return;
@@ -625,7 +745,7 @@ function render(shadow) {
   shell.classList.toggle("collapsed", state.collapse);
   shell.classList.toggle("compact", state.compact);
   applyBubblePosition(shell);
-  detailsToggle.textContent = state.compact ? "More" : "Less";
+  detailsToggle.textContent = state.compact ? t("more") : t("less");
   const bubbleLabel = state.payload?.user?.username
     ? state.payload.user.username.replace(/_/g, "").slice(0, 2).toUpperCase() || "TS"
     : "TS";
@@ -640,19 +760,19 @@ function render(shadow) {
   }
 
   status.textContent = state.loading
-    ? `Loading ${state.selectedUsername}...`
+    ? t("loading", { name: state.selectedUsername })
     : state.error
       ? state.error
       : state.payload
-        ? `Showing ${state.payload.user.username}`
-        : "Select a visible player or type a username.";
+        ? t("showing", { name: state.payload.user.username })
+        : t("idle");
   status.className = `status${state.error ? " error" : state.loading ? " loading" : ""}`;
 
   candidateList.innerHTML = "";
   if (!state.candidates.length) {
     const empty = document.createElement("div");
     empty.className = "hint";
-    empty.textContent = "No strong usernames yet. Wait for page data, or type one manually.";
+    empty.textContent = t("no_candidates");
     candidateList.append(empty);
   } else {
     for (const candidate of state.candidates) {
@@ -661,9 +781,13 @@ function render(shadow) {
       button.className = `candidate${candidate.name === state.selectedUsername ? " active" : ""}`;
       button.innerHTML = `
         <span class="candidate-name">${escapeHtml(candidate.name)}</span>
-        <span class="candidate-source">${escapeHtml(candidate.source)}</span>
+        <span class="candidate-source">${escapeHtml(formatCandidateSource(candidate.source))}</span>
       `;
-      button.title = `Confidence ${candidate.score} · DOM ${candidate.domScore} · Network ${candidate.networkScore}`;
+      button.title = t("candidate_title", {
+        score: candidate.score,
+        dom: candidate.domScore,
+        network: candidate.networkScore
+      });
       button.addEventListener("click", () => analyzeUsername(candidate.name, shadow));
       candidateList.append(button);
     }
@@ -672,13 +796,13 @@ function render(shadow) {
   if (!state.payload) {
     body.innerHTML = `
       <section class="empty">
-        <div class="empty-title">What this panel shows</div>
+        <div class="empty-title">${escapeHtml(t("empty_title"))}</div>
         <ul>
-          <li>Current rank, TR, lifetime win rate, APM/PPS/VS</li>
-          <li>Last 20 and 50 match trend from public leagueflow</li>
-          <li>Recent match list and round-level resilience from public records</li>
-          <li>Candidate names prefer network data from the live page over static UI text</li>
-          <li>If a name is still missing, type it manually</li>
+          <li>${escapeHtml(t("empty_item_1"))}</li>
+          <li>${escapeHtml(t("empty_item_2"))}</li>
+          <li>${escapeHtml(t("empty_item_3"))}</li>
+          <li>${escapeHtml(t("empty_item_4"))}</li>
+          <li>${escapeHtml(t("empty_item_5"))}</li>
         </ul>
       </section>
     `;
@@ -693,50 +817,50 @@ function renderPayload(payload) {
   const trend = payload.trend;
   const resilience = payload.resilience;
   const coreCards = [
-    card("Rank", escapeHtml(summary.rank || "n/a"), `TR ${formatNumber(summary.tr)}`),
-    card("Lifetime WR", formatRate(summary.lifetimeWinRate), `${summary.gamesWon}/${summary.gamesPlayed} wins`),
-    card("Last 20", formatRate(trend.recent20?.winRate), `TR ${formatSigned(trend.recent20?.trDelta, 0)}`),
-    card("Streak", escapeHtml(trend.currentStreak || "n/a"), `Form ${escapeHtml(trend.form || "n/a")}`)
+    card(t("rank"), escapeHtml(summary.rank || t("na")), t("tr_note", { tr: formatNumber(summary.tr) })),
+    card(t("lifetime_wr"), formatRate(summary.lifetimeWinRate), t("wins_note", { wins: summary.gamesWon, games: summary.gamesPlayed })),
+    card(t("last_20"), formatRate(trend.recent20?.winRate), t("tr_note", { tr: formatSigned(trend.recent20?.trDelta, 0) })),
+    card(t("streak"), escapeHtml(trend.currentStreak || t("na")), t("form_note", { form: escapeHtml(trend.form || t("na")) }))
   ].join("");
 
   const extraCards = [
-    card("APM / PPS / VS", `${formatNumber(summary.apm, 1)} / ${formatNumber(summary.pps, 2)} / ${formatNumber(summary.vs, 1)}`, "Current summary stats"),
-    card("0-2 comeback", formatRate(resilience.zeroTwoComebackRate), `${resilience.zeroTwoSamples} samples`)
+    card(t("apm_pps_vs"), `${formatNumber(summary.apm, 1)} / ${formatNumber(summary.pps, 2)} / ${formatNumber(summary.vs, 1)}`, t("summary_stats_note")),
+    card(t("comeback_0_2"), formatRate(resilience.zeroTwoComebackRate), t("samples_note", { count: resilience.zeroTwoSamples }))
   ].join("");
 
   return `
     <section class="identity">
       <div>
         <div class="player-name">${escapeHtml(payload.user.username)}</div>
-        <div class="subtle">${escapeHtml(payload.user.country || "country hidden")} · public league data</div>
+        <div class="subtle">${escapeHtml(payload.user.country || t("country_hidden"))} · ${escapeHtml(t("public_league_data"))}</div>
       </div>
     </section>
     <section class="card-grid">${coreCards}</section>
     <section class="mini-grid">${extraCards}</section>
     <section class="panel-block quick-block">
-      <div class="block-title">Round-Level Read</div>
+      <div class="block-title">${escapeHtml(t("round_level_read"))}</div>
       <div class="metric-list">
-        <div class="metric-row"><span>After dropping round 1</span><strong>${formatRate(resilience.afterRound1LossWinRate)}</strong></div>
-        <div class="metric-row"><span>After winning round 1</span><strong>${formatRate(resilience.afterRound1WinWinRate)}</strong></div>
-        <div class="metric-row"><span>Best streaks</span><strong>W${trend.bestWinStreak} / L${trend.bestLossStreak}</strong></div>
+        <div class="metric-row"><span>${escapeHtml(t("after_round1_loss"))}</span><strong>${formatRate(resilience.afterRound1LossWinRate)}</strong></div>
+        <div class="metric-row"><span>${escapeHtml(t("after_round1_win"))}</span><strong>${formatRate(resilience.afterRound1WinWinRate)}</strong></div>
+        <div class="metric-row"><span>${escapeHtml(t("best_streaks"))}</span><strong>W${trend.bestWinStreak} / L${trend.bestLossStreak}</strong></div>
       </div>
     </section>
     ${state.compact ? `
       <section class="panel-block compact-tip">
-        <div class="block-title">Compact Mode</div>
-        <div class="hint">Open "More" only when you need charts or match history. The panel auto-hides during active matches.</div>
+        <div class="block-title">${escapeHtml(t("compact_mode"))}</div>
+        <div class="hint">${escapeHtml(t("compact_hint"))}</div>
       </section>
     ` : `
       <section class="panel-block">
-        <div class="block-title">Rolling Win Rate</div>
+        <div class="block-title">${escapeHtml(t("rolling_win_rate"))}</div>
         ${renderMiniChart(trend.rollingWinRate, { percent: true, color: "#f67b47" })}
       </section>
       <section class="panel-block">
-        <div class="block-title">TR Trend</div>
+        <div class="block-title">${escapeHtml(t("tr_trend"))}</div>
         ${renderMiniChart(trend.trSeries, { percent: false, color: "#6dd6a8" })}
       </section>
       <section class="panel-block">
-        <div class="block-title">Recent Match List</div>
+        <div class="block-title">${escapeHtml(t("recent_match_list"))}</div>
         ${renderRecentMatches(payload.recentMatches)}
       </section>
     `}
@@ -834,7 +958,7 @@ function scheduleAutoCollapseIfNeeded() {
 
 function renderMiniChart(points, options) {
   if (!points?.length) {
-    return `<div class="hint">Not enough public data for this chart yet.</div>`;
+    return `<div class="hint">${escapeHtml(t("chart_not_enough"))}</div>`;
   }
 
   const width = 320;
@@ -872,13 +996,13 @@ function renderMiniChart(points, options) {
     <svg viewBox="0 0 ${width} ${height}" class="chart" role="img">
       <polyline points="${path}" fill="none" stroke="${options.color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
     </svg>
-    <div class="chart-note">Latest: ${options.percent ? formatRate(lastValue) : formatNumber(lastValue)}</div>
+    <div class="chart-note">${escapeHtml(t("chart_latest", { value: options.percent ? formatRate(lastValue) : formatNumber(lastValue) }))}</div>
   `;
 }
 
 function renderRecentMatches(matches) {
   if (!matches?.length) {
-    return `<div class="hint">No recent records returned by the public API.</div>`;
+    return `<div class="hint">${escapeHtml(t("recent_records_empty"))}</div>`;
   }
 
   return `
@@ -886,8 +1010,8 @@ function renderRecentMatches(matches) {
       ${matches.map((match) => `
         <div class="match-row">
           <div>
-            <div class="match-opponent">${escapeHtml(match.opponentUsername || "unknown")}</div>
-            <div class="subtle">${formatTimestamp(match.ts)} · score ${escapeHtml(match.score)}</div>
+            <div class="match-opponent">${escapeHtml(match.opponentUsername || t("unknown"))}</div>
+            <div class="subtle">${formatTimestamp(match.ts)} · ${escapeHtml(t("score_label"))} ${escapeHtml(match.score)}</div>
           </div>
           <div class="pill ${match.bucket === "W" ? "win" : match.bucket === "L" ? "loss" : ""}">
             ${escapeHtml(match.bucket || "?")}
@@ -908,23 +1032,33 @@ function card(label, value, note) {
   `;
 }
 
+function formatCandidateSource(source) {
+  if (source === "network+dom") {
+    return t("source_network_dom");
+  }
+  if (source === "network") {
+    return t("source_network");
+  }
+  return t("source_dom");
+}
+
 function formatRate(value) {
-  return Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : "n/a";
+  return Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : t("na");
 }
 
 function formatNumber(value, digits = 2) {
-  return Number.isFinite(value) ? Number(value).toFixed(digits) : "n/a";
+  return Number.isFinite(value) ? Number(value).toFixed(digits) : t("na");
 }
 
 function formatSigned(value, digits = 0) {
-  return Number.isFinite(value) ? `${value >= 0 ? "+" : ""}${Number(value).toFixed(digits)}` : "n/a";
+  return Number.isFinite(value) ? `${value >= 0 ? "+" : ""}${Number(value).toFixed(digits)}` : t("na");
 }
 
 function formatTimestamp(value) {
   if (!Number.isFinite(value)) {
-    return "n/a";
+    return t("na");
   }
-  return new Intl.DateTimeFormat("zh-TW", {
+  return new Intl.DateTimeFormat(UI_LOCALE, {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",

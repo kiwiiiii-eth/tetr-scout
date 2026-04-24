@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 
 BASE_URL = "https://ch.tetr.io/api"
 USER_AGENT = "tetr-cli-analyzer/0.2"
+LANG_CHOICES = ("zh", "en", "both")
 
 RESULT_LABELS = {
     1: "win",
@@ -36,6 +37,15 @@ WIN_CODES = {1, 3}
 LOSS_CODES = {2, 4}
 TIE_CODES = {5}
 EFFECTIVE_CODES = WIN_CODES | LOSS_CODES | TIE_CODES
+WEEKDAY_ZH = {
+    "Monday": "星期一",
+    "Tuesday": "星期二",
+    "Wednesday": "星期三",
+    "Thursday": "星期四",
+    "Friday": "星期五",
+    "Saturday": "星期六",
+    "Sunday": "星期日",
+}
 
 
 @dataclass(frozen=True)
@@ -83,52 +93,75 @@ def parse_records_limit_arg(value: str) -> int | None:
     try:
         parsed = int(normalized)
     except ValueError as exc:
-        raise argparse.ArgumentTypeError("records limit must be a non-negative integer or 'all'") from exc
+        raise argparse.ArgumentTypeError("records limit must be a non-negative integer or 'all' / --records-limit 必須是非負整數或 all") from exc
 
     if parsed < 0:
-        raise argparse.ArgumentTypeError("records limit must be >= 0, or 'all'")
+        raise argparse.ArgumentTypeError("records limit must be >= 0, or 'all' / --records-limit 必須 >= 0 或 all")
     return parsed
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Analyze a TETR.IO player's TETRA LEAGUE performance."
+        description="Analyze a TETR.IO player's TETRA LEAGUE performance. / 分析 TETR.IO 玩家在 TETRA LEAGUE 的戰績。"
     )
-    parser.add_argument("username", help="TETR.IO username or user id")
+    parser.add_argument("username", help="TETR.IO username or user id / TETR.IO 使用者名稱或 user id")
     parser.add_argument(
         "--recent",
         type=int,
         default=20,
-        help="recent match window to highlight (default: 20)",
+        help="recent match window to highlight (default: 20) / 要強調的近期場數視窗（預設 20）",
     )
     parser.add_argument(
         "--timezone",
         default="UTC",
-        help="IANA timezone for display, e.g. Asia/Taipei (default: UTC)",
+        help="IANA timezone for display, e.g. Asia/Taipei (default: UTC) / 顯示用時區，例如 Asia/Taipei（預設 UTC）",
     )
     parser.add_argument(
         "--csv",
         type=Path,
-        help="optional path to export parsed leagueflow matches as CSV",
+        help="optional path to export parsed leagueflow matches as CSV / 匯出 leagueflow 解析結果 CSV 的路徑",
     )
     parser.add_argument(
         "--records-limit",
         type=parse_records_limit_arg,
         default=100,
-        help="league records to inspect for round-level resilience; use 0 to disable or all for full history (default: 100)",
+        help="league records to inspect for round-level resilience; use 0 to disable or all for full history (default: 100) / 要檢查的逐場 records 數量；0 為停用，all 為抓完整歷史（預設 100）",
     )
     parser.add_argument(
         "--html-report",
         nargs="?",
         const="__AUTO__",
         default=None,
-        help="write a self-contained HTML report; optional path, default: output/<username>_report.html",
+        help="write a self-contained HTML report; optional path, default: output/<username>_report.html / 輸出獨立 HTML 報表；可選路徑，預設 output/<username>_report.html",
+    )
+    parser.add_argument(
+        "--lang",
+        choices=LANG_CHOICES,
+        default="zh",
+        help="output language: zh, en, or both (default: zh) / 輸出語言：zh、en、both（預設 zh）",
     )
     return parser
 
 
 def parse_args() -> argparse.Namespace:
     return build_parser().parse_args()
+
+
+def localized_text(lang: str, zh: str, en: str) -> str:
+    if lang == "en":
+        return en
+    if lang == "both":
+        return f"{zh} / {en}"
+    return zh
+
+
+def localized_weekday(name: str, lang: str) -> str:
+    zh = WEEKDAY_ZH.get(name, name)
+    return localized_text(lang, zh, name)
+
+
+def html_lang_code(lang: str) -> str:
+    return "en" if lang == "en" else "zh-Hant"
 
 
 def request_json(path: str, session_id: str, query: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -977,7 +1010,7 @@ def svg_bar_chart(
 """.strip()
 
 
-def build_takeaways(summary: dict[str, Any], snapshot: dict[str, Any]) -> list[str]:
+def build_takeaways(summary: dict[str, Any], snapshot: dict[str, Any], lang: str) -> list[str]:
     takeaways: list[str] = []
     resilience = snapshot["resilience"]
     upset_recovery = snapshot["upset_recovery"]
@@ -986,31 +1019,56 @@ def build_takeaways(summary: dict[str, Any], snapshot: dict[str, Any]) -> list[s
 
     if recent20 and recent20.get("win_rate") is not None:
         takeaways.append(
-            "Recent form is stronger than lifetime baseline: "
-            f"last {recent20['size']} win rate {format_rate(recent20['win_rate'])} vs lifetime {format_percent(int(summary.get('gameswon', 0) or 0), int(summary.get('gamesplayed', 0) or 0))}."
+            localized_text(
+                lang,
+                "近期狀態強於生涯基準："
+                f"最近 {recent20['size']} 場勝率 {format_rate(recent20['win_rate'])}，"
+                f"高於生涯勝率 {format_percent(int(summary.get('gameswon', 0) or 0), int(summary.get('gamesplayed', 0) or 0))}。",
+                "Recent form is stronger than lifetime baseline: "
+                f"last {recent20['size']} win rate {format_rate(recent20['win_rate'])} vs lifetime {format_percent(int(summary.get('gameswon', 0) or 0), int(summary.get('gamesplayed', 0) or 0))}.",
+            )
         )
 
     if resilience["after_round1_loss_win_rate"] is not None and resilience["after_round1_win_win_rate"] is not None:
         gap = resilience["after_round1_win_win_rate"] - resilience["after_round1_loss_win_rate"]
         takeaways.append(
-            "Opening rounds matter a lot: "
-            f"after losing round 1, match win rate is {format_rate(resilience['after_round1_loss_win_rate'])}, "
-            f"versus {format_rate(resilience['after_round1_win_win_rate'])} after winning round 1 "
-            f"({gap * 100:.1f} pts gap)."
+            localized_text(
+                lang,
+                "開局影響很大："
+                f"第 1 局輸掉後，整場勝率只有 {format_rate(resilience['after_round1_loss_win_rate'])}；"
+                f"第 1 局拿下時則有 {format_rate(resilience['after_round1_win_win_rate'])}，"
+                f"差距 {gap * 100:.1f} 個百分點。",
+                "Opening rounds matter a lot: "
+                f"after losing round 1, match win rate is {format_rate(resilience['after_round1_loss_win_rate'])}, "
+                f"versus {format_rate(resilience['after_round1_win_win_rate'])} after winning round 1 "
+                f"({gap * 100:.1f} pts gap).",
+            )
         )
 
     if upset_recovery["upset"]["next_match_win_rate"] is not None and upset_recovery["other"]["next_match_win_rate"] is not None:
         takeaways.append(
-            "Upset losses hurt more than normal losses: "
-            f"next-match win rate drops to {format_rate(upset_recovery['upset']['next_match_win_rate'])} "
-            f"after losing to an opponent at least 250 TR lower, compared with {format_rate(upset_recovery['other']['next_match_win_rate'])} after other losses."
+            localized_text(
+                lang,
+                "爆冷輸球比一般敗場更傷："
+                f"若輸給低自己至少 250 TR 的對手，下一場勝率會掉到 {format_rate(upset_recovery['upset']['next_match_win_rate'])}；"
+                f"一般敗場後則是 {format_rate(upset_recovery['other']['next_match_win_rate'])}。",
+                "Upset losses hurt more than normal losses: "
+                f"next-match win rate drops to {format_rate(upset_recovery['upset']['next_match_win_rate'])} "
+                f"after losing to an opponent at least 250 TR lower, compared with {format_rate(upset_recovery['other']['next_match_win_rate'])} after other losses.",
+            )
         )
 
     if fatigue["first_half_win_rate"] is not None and fatigue["second_half_win_rate"] is not None:
         takeaways.append(
-            "Session fatigue is present but mild: "
-            f"qualified long sessions go from {format_rate(fatigue['first_half_win_rate'])} in the first half "
-            f"to {format_rate(fatigue['second_half_win_rate'])} in the second half."
+            localized_text(
+                lang,
+                "長 session 的疲勞存在，但不算嚴重："
+                f"前半段勝率 {format_rate(fatigue['first_half_win_rate'])}，"
+                f"後半段降到 {format_rate(fatigue['second_half_win_rate'])}。",
+                "Session fatigue is present but mild: "
+                f"qualified long sessions go from {format_rate(fatigue['first_half_win_rate'])} in the first half "
+                f"to {format_rate(fatigue['second_half_win_rate'])} in the second half.",
+            )
         )
 
     return takeaways[:4]
@@ -1024,6 +1082,7 @@ def write_html_report(
     recent_records: list[RecentLeagueRecord],
     snapshot: dict[str, Any],
     tz: ZoneInfo,
+    lang: str,
 ) -> None:
     user = user_payload["data"]
     summary = summary_payload["data"]
@@ -1041,7 +1100,7 @@ def write_html_report(
     tr_chart = svg_line_chart(
         points=tr_points,
         tz=tz,
-        title="TR History Across Leagueflow",
+        title=localized_text(lang, "TR 歷史曲線", "TR History Across Leagueflow"),
         y_label="TR",
         color="#1b6f53",
         bands=loss_bands,
@@ -1049,8 +1108,8 @@ def write_html_report(
     rolling_chart = svg_line_chart(
         points=rolling_points,
         tz=tz,
-        title="Rolling 20-Match Win Rate",
-        y_label="Win rate",
+        title=localized_text(lang, "20 場滾動勝率", "Rolling 20-Match Win Rate"),
+        y_label=localized_text(lang, "勝率", "Win rate"),
         color="#c76b2f",
         y_min=0.0,
         y_max=1.0,
@@ -1058,41 +1117,134 @@ def write_html_report(
     )
     resilience_chart = svg_bar_chart(
         items=[
-            ("R1 loss", resilience["after_round1_loss_win_rate"], "#b85137", f"{resilience['after_round1_loss_samples']} matches"),
-            ("R1 win", resilience["after_round1_win_win_rate"], "#23745b", f"{resilience['after_round1_win_samples']} matches"),
-            ("0-2 comeback", resilience["zero_two_comeback_rate"], "#d19c2f", f"{resilience['zero_two_samples']} matches"),
-            ("After 2-3 loss", resilience["close_loss_next_match_win_rate"], "#2f6fa8", f"{resilience['close_loss_samples']} samples"),
-            ("After 0-3 or 1-3", resilience["blowout_loss_next_match_win_rate"], "#6f4f9b", f"{resilience['blowout_loss_samples']} samples"),
+            (
+                localized_text(lang, "第 1 局先輸", "R1 loss"),
+                resilience["after_round1_loss_win_rate"],
+                "#b85137",
+                localized_text(lang, f"{resilience['after_round1_loss_samples']} 場", f"{resilience['after_round1_loss_samples']} matches"),
+            ),
+            (
+                localized_text(lang, "第 1 局先贏", "R1 win"),
+                resilience["after_round1_win_win_rate"],
+                "#23745b",
+                localized_text(lang, f"{resilience['after_round1_win_samples']} 場", f"{resilience['after_round1_win_samples']} matches"),
+            ),
+            (
+                localized_text(lang, "0:2 落後翻盤", "0-2 comeback"),
+                resilience["zero_two_comeback_rate"],
+                "#d19c2f",
+                localized_text(lang, f"{resilience['zero_two_samples']} 場", f"{resilience['zero_two_samples']} matches"),
+            ),
+            (
+                localized_text(lang, "2:3 惜敗後", "After 2-3 loss"),
+                resilience["close_loss_next_match_win_rate"],
+                "#2f6fa8",
+                localized_text(lang, f"{resilience['close_loss_samples']} 筆", f"{resilience['close_loss_samples']} samples"),
+            ),
+            (
+                localized_text(lang, "0:3 或 1:3 後", "After 0-3 or 1-3"),
+                resilience["blowout_loss_next_match_win_rate"],
+                "#6f4f9b",
+                localized_text(lang, f"{resilience['blowout_loss_samples']} 筆", f"{resilience['blowout_loss_samples']} samples"),
+            ),
         ],
-        title="Round-Level Resilience",
+        title=localized_text(lang, "局級韌性", "Round-Level Resilience"),
     )
     recovery_chart = svg_bar_chart(
         items=[
-            ("After 1L", snapshot["post_loss_1"]["next_match_win_rate"], "#c76b2f", f"{snapshot['post_loss_1']['samples']} samples"),
-            ("After 2L", snapshot["post_loss_2"]["next_match_win_rate"], "#b85137", f"{snapshot['post_loss_2']['samples']} samples"),
-            ("Upset loss", upset_recovery["upset"]["next_match_win_rate"], "#8d4f2d", f"{upset_recovery['upset']['samples']} samples"),
-            ("Other loss", upset_recovery["other"]["next_match_win_rate"], "#23745b", f"{upset_recovery['other']['samples']} samples"),
-            ("Quick requeue", quick_requeue["fast"]["next_match_win_rate"], "#3c7f99", f"{quick_requeue['fast']['samples']} samples"),
-            ("Cooldown", quick_requeue["cooldown"]["next_match_win_rate"], "#6f8c3a", f"{quick_requeue['cooldown']['samples']} samples"),
+            (
+                localized_text(lang, "1 連敗後", "After 1L"),
+                snapshot["post_loss_1"]["next_match_win_rate"],
+                "#c76b2f",
+                localized_text(lang, f"{snapshot['post_loss_1']['samples']} 筆", f"{snapshot['post_loss_1']['samples']} samples"),
+            ),
+            (
+                localized_text(lang, "2 連敗後", "After 2L"),
+                snapshot["post_loss_2"]["next_match_win_rate"],
+                "#b85137",
+                localized_text(lang, f"{snapshot['post_loss_2']['samples']} 筆", f"{snapshot['post_loss_2']['samples']} samples"),
+            ),
+            (
+                localized_text(lang, "爆冷敗場後", "Upset loss"),
+                upset_recovery["upset"]["next_match_win_rate"],
+                "#8d4f2d",
+                localized_text(lang, f"{upset_recovery['upset']['samples']} 筆", f"{upset_recovery['upset']['samples']} samples"),
+            ),
+            (
+                localized_text(lang, "一般敗場後", "Other loss"),
+                upset_recovery["other"]["next_match_win_rate"],
+                "#23745b",
+                localized_text(lang, f"{upset_recovery['other']['samples']} 筆", f"{upset_recovery['other']['samples']} samples"),
+            ),
+            (
+                localized_text(lang, "快速重排", "Quick requeue"),
+                quick_requeue["fast"]["next_match_win_rate"],
+                "#3c7f99",
+                localized_text(lang, f"{quick_requeue['fast']['samples']} 筆", f"{quick_requeue['fast']['samples']} samples"),
+            ),
+            (
+                localized_text(lang, "冷卻後再排", "Cooldown"),
+                quick_requeue["cooldown"]["next_match_win_rate"],
+                "#6f8c3a",
+                localized_text(lang, f"{quick_requeue['cooldown']['samples']} 筆", f"{quick_requeue['cooldown']['samples']} samples"),
+            ),
         ],
-        title="Recovery Patterns After Losses",
+        title=localized_text(lang, "輸球後恢復模式", "Recovery Patterns After Losses"),
     )
     fatigue_chart = svg_bar_chart(
         items=[
-            ("Session first half", fatigue["first_half_win_rate"], "#23745b", f"{fatigue['qualified_sessions']} sessions"),
-            ("Session second half", fatigue["second_half_win_rate"], "#c76b2f", f"{fatigue['qualified_sessions']} sessions"),
+            (
+                localized_text(lang, "Session 前半段", "Session first half"),
+                fatigue["first_half_win_rate"],
+                "#23745b",
+                localized_text(lang, f"{fatigue['qualified_sessions']} 個 session", f"{fatigue['qualified_sessions']} sessions"),
+            ),
+            (
+                localized_text(lang, "Session 後半段", "Session second half"),
+                fatigue["second_half_win_rate"],
+                "#c76b2f",
+                localized_text(lang, f"{fatigue['qualified_sessions']} 個 session", f"{fatigue['qualified_sessions']} sessions"),
+            ),
         ],
-        title="Session Fatigue",
+        title=localized_text(lang, "Session 疲勞", "Session Fatigue"),
     )
 
-    takeaways = build_takeaways(summary, snapshot)
+    takeaways = build_takeaways(summary, snapshot, lang)
     cards = [
-        ("Current rank", format_optional(summary.get("rank")), "Current TETRA LEAGUE tier"),
-        ("Current TR", format_number(summary.get("tr")), "Current rating"),
-        ("Lifetime WR", format_percent(int(summary.get("gameswon", 0) or 0), int(summary.get("gamesplayed", 0) or 0)), f"{summary.get('gamesplayed', 'n/a')} official games"),
-        ("Last 20 WR", format_rate(recent20.get("win_rate") if recent20 else None), f"TR {format_signed(recent20.get('tr_delta') if recent20 else None, 0)}" if recent20 else "n/a"),
-        ("Detailed records", str(len(recent_records)), "Paginated match-detail samples"),
-        ("Current streak", snapshot["current_streak_label"], f"Best W{snapshot['best_win_streak']} / L{snapshot['best_loss_streak']}"),
+        (
+            localized_text(lang, "目前牌位", "Current rank"),
+            format_optional(summary.get("rank")),
+            localized_text(lang, "目前 TETRA LEAGUE 段位", "Current TETRA LEAGUE tier"),
+        ),
+        (
+            localized_text(lang, "目前 TR", "Current TR"),
+            format_number(summary.get("tr")),
+            localized_text(lang, "目前 rating", "Current rating"),
+        ),
+        (
+            localized_text(lang, "生涯勝率", "Lifetime WR"),
+            format_percent(int(summary.get("gameswon", 0) or 0), int(summary.get("gamesplayed", 0) or 0)),
+            localized_text(lang, f"{summary.get('gamesplayed', 'n/a')} 場官方對戰", f"{summary.get('gamesplayed', 'n/a')} official games"),
+        ),
+        (
+            localized_text(lang, "近 20 場勝率", "Last 20 WR"),
+            format_rate(recent20.get("win_rate") if recent20 else None),
+            localized_text(
+                lang,
+                f"TR {format_signed(recent20.get('tr_delta') if recent20 else None, 0)}" if recent20 else "n/a",
+                f"TR {format_signed(recent20.get('tr_delta') if recent20 else None, 0)}" if recent20 else "n/a",
+            ),
+        ),
+        (
+            localized_text(lang, "詳細紀錄", "Detailed records"),
+            str(len(recent_records)),
+            localized_text(lang, "可分頁逐場樣本", "Paginated match-detail samples"),
+        ),
+        (
+            localized_text(lang, "目前連續紀錄", "Current streak"),
+            snapshot["current_streak_label"],
+            localized_text(lang, f"最佳 W{snapshot['best_win_streak']} / L{snapshot['best_loss_streak']}", f"Best W{snapshot['best_win_streak']} / L{snapshot['best_loss_streak']}"),
+        ),
     ]
 
     card_markup = "".join(
@@ -1116,15 +1268,15 @@ def write_html_report(
         f"{effective[0].played_at_utc.astimezone(tz).strftime('%Y-%m-%d')} to "
         f"{effective[-1].played_at_utc.astimezone(tz).strftime('%Y-%m-%d')}"
         if effective
-        else "n/a"
+        else localized_text(lang, "無資料", "n/a")
     )
 
     document = f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="{html_lang_code(lang)}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{html.escape(user.get('username', 'unknown'))} TETR.IO Report</title>
+  <title>{html.escape(user.get('username', 'unknown'))} {html.escape(localized_text(lang, 'TETR.IO 報表', 'TETR.IO Report'))}</title>
   <style>
     :root {{
       --bg: #f4efe6;
@@ -1324,11 +1476,13 @@ def write_html_report(
 <body>
   <main class="page">
     <section class="hero">
-      <div class="eyebrow">TETR.IO League Report</div>
+      <div class="eyebrow">{html.escape(localized_text(lang, 'TETR.IO 聯盟報表', 'TETR.IO League Report'))}</div>
       <h1>{html.escape(user.get('username', 'unknown'))}</h1>
       <p class="subtitle">
-        Full-history report built from official TETRA CHANNEL API endpoints. Local timezone: {html.escape(tz.key)}.
-        History range: {html.escape(local_range)}. Generated at {html.escape(generated_at)}.
+        {html.escape(localized_text(lang, '使用官方 TETRA CHANNEL API 端點建立的完整歷史報表。', 'Full-history report built from official TETRA CHANNEL API endpoints.'))}
+        {html.escape(localized_text(lang, f'本地時區：{tz.key}。', f'Local timezone: {tz.key}.'))}
+        {html.escape(localized_text(lang, f'歷史區間：{local_range}。', f'History range: {local_range}.'))}
+        {html.escape(localized_text(lang, f'產生時間：{generated_at}。', f'Generated at {generated_at}.'))}
       </p>
       <div class="card-grid">{card_markup}</div>
     </section>
@@ -1336,7 +1490,7 @@ def write_html_report(
     <section class="section-grid">
       {tr_chart}
       <aside class="note-panel">
-        <div class="chart-title">What Stands Out</div>
+        <div class="chart-title">{html.escape(localized_text(lang, '重點觀察', 'What Stands Out'))}</div>
         <ul>{takeaway_markup}</ul>
       </aside>
     </section>
@@ -1355,9 +1509,11 @@ def write_html_report(
     </section>
 
     <p class="footer">
-      Data sources: <code>/users/:user/summaries/league</code>, <code>/labs/leagueflow/:user</code>,
-      and paginated <code>/users/:user/records/league/recent</code>.
-      The detailed-record count can differ slightly from summary games played because official endpoints do not always use exactly the same counting scope.
+      {html.escape(localized_text(lang, '資料來源：', 'Data sources:'))}
+      <code>/users/:user/summaries/league</code>, <code>/labs/leagueflow/:user</code>,
+      {html.escape(localized_text(lang, '以及可分頁的', 'and paginated'))}
+      <code>/users/:user/records/league/recent</code>。
+      {html.escape(localized_text(lang, '由於官方端點的統計口徑不一定完全一致，詳細 records 的筆數可能和 summary 場數有些微差異。', 'The detailed-record count can differ slightly from summary games played because official endpoints do not always use exactly the same counting scope.'))}
     </p>
   </main>
 </body>
@@ -1368,18 +1524,18 @@ def write_html_report(
     path.write_text(document, encoding="utf-8")
 
 
-def write_csv(path: Path, matches: list[Match], tz: ZoneInfo) -> None:
+def write_csv(path: Path, matches: list[Match], tz: ZoneInfo, lang: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(
             [
-                "played_at_utc",
-                "played_at_local",
-                "result",
-                "bucket",
-                "tr_after",
-                "opponent_tr",
+                localized_text(lang, "對戰時間_UTC", "played_at_utc"),
+                localized_text(lang, "對戰時間_本地", "played_at_local"),
+                localized_text(lang, "結果", "result"),
+                localized_text(lang, "桶位", "bucket"),
+                localized_text(lang, "對戰後_TR", "tr_after"),
+                localized_text(lang, "對手_TR", "opponent_tr"),
             ]
         )
         for match in matches:
@@ -1415,6 +1571,7 @@ def print_report(
     snapshot: dict[str, Any],
     recent_size: int,
     tz: ZoneInfo,
+    lang: str,
 ) -> None:
     user = user_payload["data"]
     summary = summary_payload["data"]
@@ -1432,240 +1589,459 @@ def print_report(
     upset_recovery = snapshot["upset_recovery"]
     resilience = snapshot["resilience"]
 
-    print(f"Player: {user.get('username', 'unknown')}")
+    print(f"{localized_text(lang, '玩家', 'Player')}: {user.get('username', 'unknown')}")
     if user.get("country"):
-        print(f"Country: {user['country']}")
+        print(f"{localized_text(lang, '國家', 'Country')}: {user['country']}")
     print()
 
-    print("Current League")
+    print(localized_text(lang, "目前聯盟", "Current League"))
     print(
-        "  Rank: {rank}  |  TR: {tr}  |  Standing: {standing}  |  Percentile: {percentile} ({percentile_rank})".format(
-            rank=format_optional(summary.get("rank")),
-            tr=format_number(summary.get("tr")),
-            standing=(
-                f"#{summary['standing']}"
-                if isinstance(summary.get("standing"), int) and summary["standing"] >= 0
-                else "n/a"
+        "  " + localized_text(
+            lang,
+            "牌位: {rank}  |  TR: {tr}  |  排名: {standing}  |  百分位: {percentile} ({percentile_rank})".format(
+                rank=format_optional(summary.get("rank")),
+                tr=format_number(summary.get("tr")),
+                standing=(
+                    f"#{summary['standing']}"
+                    if isinstance(summary.get("standing"), int) and summary["standing"] >= 0
+                    else "n/a"
+                ),
+                percentile=(
+                    f"{summary['percentile'] * 100:.2f}%"
+                    if isinstance(summary.get("percentile"), (int, float))
+                    else "n/a"
+                ),
+                percentile_rank=format_optional(summary.get("percentile_rank")),
             ),
-            percentile=(
-                f"{summary['percentile'] * 100:.2f}%"
-                if isinstance(summary.get("percentile"), (int, float))
-                else "n/a"
+            "Rank: {rank}  |  TR: {tr}  |  Standing: {standing}  |  Percentile: {percentile} ({percentile_rank})".format(
+                rank=format_optional(summary.get("rank")),
+                tr=format_number(summary.get("tr")),
+                standing=(
+                    f"#{summary['standing']}"
+                    if isinstance(summary.get("standing"), int) and summary["standing"] >= 0
+                    else "n/a"
+                ),
+                percentile=(
+                    f"{summary['percentile'] * 100:.2f}%"
+                    if isinstance(summary.get("percentile"), (int, float))
+                    else "n/a"
+                ),
+                percentile_rank=format_optional(summary.get("percentile_rank")),
             ),
-            percentile_rank=format_optional(summary.get("percentile_rank")),
         )
     )
     print(
-        "  Glicko: {glicko}  |  RD: {rd}  |  GXE: {gxe}".format(
-            glicko=format_number(summary.get("glicko")),
-            rd=format_number(summary.get("rd")),
-            gxe=(f"{summary['gxe']:.2f}%" if isinstance(summary.get("gxe"), (int, float)) else "n/a"),
+        "  " + localized_text(
+            lang,
+            "Glicko: {glicko}  |  RD: {rd}  |  GXE: {gxe}".format(
+                glicko=format_number(summary.get("glicko")),
+                rd=format_number(summary.get("rd")),
+                gxe=(f"{summary['gxe']:.2f}%" if isinstance(summary.get("gxe"), (int, float)) else "n/a"),
+            ),
+            "Glicko: {glicko}  |  RD: {rd}  |  GXE: {gxe}".format(
+                glicko=format_number(summary.get("glicko")),
+                rd=format_number(summary.get("rd")),
+                gxe=(f"{summary['gxe']:.2f}%" if isinstance(summary.get("gxe"), (int, float)) else "n/a"),
+            ),
         )
     )
     print(
-        "  Recent skill stats: APM {apm}  |  PPS {pps}  |  VS {vs}".format(
-            apm=format_number(summary.get("apm")),
-            pps=format_number(summary.get("pps")),
-            vs=format_number(summary.get("vs")),
+        "  " + localized_text(
+            lang,
+            "近期能力值: APM {apm}  |  PPS {pps}  |  VS {vs}".format(
+                apm=format_number(summary.get("apm")),
+                pps=format_number(summary.get("pps")),
+                vs=format_number(summary.get("vs")),
+            ),
+            "Recent skill stats: APM {apm}  |  PPS {pps}  |  VS {vs}".format(
+                apm=format_number(summary.get("apm")),
+                pps=format_number(summary.get("pps")),
+                vs=format_number(summary.get("vs")),
+            ),
         )
     )
     print(
-        "  Promotion path: prev {prev_rank}  |  next {next_rank}".format(
-            prev_rank=format_optional(summary.get("prev_rank")),
-            next_rank=format_optional(summary.get("next_rank")),
+        "  " + localized_text(
+            lang,
+            "升段路徑: 上一段 {prev_rank}  |  下一段 {next_rank}".format(
+                prev_rank=format_optional(summary.get("prev_rank")),
+                next_rank=format_optional(summary.get("next_rank")),
+            ),
+            "Promotion path: prev {prev_rank}  |  next {next_rank}".format(
+                prev_rank=format_optional(summary.get("prev_rank")),
+                next_rank=format_optional(summary.get("next_rank")),
+            ),
         )
     )
 
     benchmark = safe_get_rank_benchmark(ranks_payload or {}, str(summary.get("rank", "")))
     if benchmark:
         print(
-            "  Rank benchmark: avg APM {apm}, PPS {pps}, VS {vs}, target TR {tr}".format(
-                apm=format_number(benchmark.get("apm")),
-                pps=format_number(benchmark.get("pps")),
-                vs=format_number(benchmark.get("vs")),
-                tr=format_number(benchmark.get("targettr")),
+            "  " + localized_text(
+                lang,
+                "段位基準: 平均 APM {apm}, PPS {pps}, VS {vs}, 目標 TR {tr}".format(
+                    apm=format_number(benchmark.get("apm")),
+                    pps=format_number(benchmark.get("pps")),
+                    vs=format_number(benchmark.get("vs")),
+                    tr=format_number(benchmark.get("targettr")),
+                ),
+                "Rank benchmark: avg APM {apm}, PPS {pps}, VS {vs}, target TR {tr}".format(
+                    apm=format_number(benchmark.get("apm")),
+                    pps=format_number(benchmark.get("pps")),
+                    vs=format_number(benchmark.get("vs")),
+                    tr=format_number(benchmark.get("targettr")),
+                ),
             )
         )
 
     print()
-    print("Lifetime")
+    print(localized_text(lang, "生涯數據", "Lifetime"))
     print(
-        "  Games: {gamesplayed}  |  Wins: {gameswon}  |  Win rate: {win_rate}".format(
-            gamesplayed=summary.get("gamesplayed", "n/a"),
-            gameswon=summary.get("gameswon", "n/a"),
-            win_rate=format_percent(
-                int(summary.get("gameswon", 0) or 0),
-                int(summary.get("gamesplayed", 0) or 0),
+        "  " + localized_text(
+            lang,
+            "總場數: {gamesplayed}  |  勝場: {gameswon}  |  勝率: {win_rate}".format(
+                gamesplayed=summary.get("gamesplayed", "n/a"),
+                gameswon=summary.get("gameswon", "n/a"),
+                win_rate=format_percent(
+                    int(summary.get("gameswon", 0) or 0),
+                    int(summary.get("gamesplayed", 0) or 0),
+                ),
+            ),
+            "Games: {gamesplayed}  |  Wins: {gameswon}  |  Win rate: {win_rate}".format(
+                gamesplayed=summary.get("gamesplayed", "n/a"),
+                gameswon=summary.get("gameswon", "n/a"),
+                win_rate=format_percent(
+                    int(summary.get("gameswon", 0) or 0),
+                    int(summary.get("gamesplayed", 0) or 0),
+                ),
             ),
         )
     )
     print(
-        "  Leagueflow parsed matches: {matches}  |  Effective matches: {effective}".format(
-            matches=len(matches),
-            effective=len(effective),
+        "  " + localized_text(
+            lang,
+            "Leagueflow 解析場數: {matches}  |  有效比賽: {effective}".format(
+                matches=len(matches),
+                effective=len(effective),
+            ),
+            "Leagueflow parsed matches: {matches}  |  Effective matches: {effective}".format(
+                matches=len(matches),
+                effective=len(effective),
+            ),
         )
     )
     print(
-        "  Parsed results: {wins}W {losses}L {ties}T  |  Current streak: {streak}  |  Best streaks: W{best_w} / L{best_l}".format(
-            wins=counts["W"],
-            losses=counts["L"],
-            ties=counts["T"],
-            streak=snapshot["current_streak_label"],
-            best_w=snapshot["best_win_streak"],
-            best_l=snapshot["best_loss_streak"],
+        "  " + localized_text(
+            lang,
+            "解析結果: {wins}W {losses}L {ties}T  |  目前連續紀錄: {streak}  |  最佳連續紀錄: W{best_w} / L{best_l}".format(
+                wins=counts["W"],
+                losses=counts["L"],
+                ties=counts["T"],
+                streak=snapshot["current_streak_label"],
+                best_w=snapshot["best_win_streak"],
+                best_l=snapshot["best_loss_streak"],
+            ),
+            "Parsed results: {wins}W {losses}L {ties}T  |  Current streak: {streak}  |  Best streaks: W{best_w} / L{best_l}".format(
+                wins=counts["W"],
+                losses=counts["L"],
+                ties=counts["T"],
+                streak=snapshot["current_streak_label"],
+                best_w=snapshot["best_win_streak"],
+                best_l=snapshot["best_loss_streak"],
+            ),
         )
     )
 
     if effective:
         print(
-            "  TR range in parsed history: {first} -> {last} ({delta})".format(
-                first=format_number(effective[0].tr_after),
-                last=format_number(effective[-1].tr_after),
-                delta=format_signed(effective[-1].tr_after - effective[0].tr_after, 0),
+            "  " + localized_text(
+                lang,
+                "解析歷史中的 TR 範圍: {first} -> {last} ({delta})".format(
+                    first=format_number(effective[0].tr_after),
+                    last=format_number(effective[-1].tr_after),
+                    delta=format_signed(effective[-1].tr_after - effective[0].tr_after, 0),
+                ),
+                "TR range in parsed history: {first} -> {last} ({delta})".format(
+                    first=format_number(effective[0].tr_after),
+                    last=format_number(effective[-1].tr_after),
+                    delta=format_signed(effective[-1].tr_after - effective[0].tr_after, 0),
+                ),
             )
         )
 
     print()
-    print("Recent Windows")
+    print(localized_text(lang, "近期區段", "Recent Windows"))
     for size in recent_sizes:
         window = snapshot["recent_windows"].get(size)
         if not window:
-            print(f"  Last {size}: n/a")
+            print("  " + localized_text(lang, f"最近 {size} 場: n/a", f"Last {size}: n/a"))
             continue
         win_rate = f"{window['win_rate'] * 100:.2f}%" if window["win_rate"] is not None else "n/a"
         print(
-            "  Last {size}: {wins}W {losses}L {ties}T  |  Win rate {win_rate}  |  TR {tr_delta}  |  Avg opp TR {opp_tr}  |  Form {form}".format(
-                size=window["size"],
-                wins=window["wins"],
-                losses=window["losses"],
-                ties=window["ties"],
-                win_rate=win_rate,
-                tr_delta=format_signed(window["tr_delta"], 0),
-                opp_tr=format_number(window["avg_opponent_tr"]),
-                form=window["form"],
+            "  " + localized_text(
+                lang,
+                "最近 {size} 場: {wins}W {losses}L {ties}T  |  勝率 {win_rate}  |  TR {tr_delta}  |  平均對手 TR {opp_tr}  |  近況 {form}".format(
+                    size=window["size"],
+                    wins=window["wins"],
+                    losses=window["losses"],
+                    ties=window["ties"],
+                    win_rate=win_rate,
+                    tr_delta=format_signed(window["tr_delta"], 0),
+                    opp_tr=format_number(window["avg_opponent_tr"]),
+                    form=window["form"],
+                ),
+                "Last {size}: {wins}W {losses}L {ties}T  |  Win rate {win_rate}  |  TR {tr_delta}  |  Avg opp TR {opp_tr}  |  Form {form}".format(
+                    size=window["size"],
+                    wins=window["wins"],
+                    losses=window["losses"],
+                    ties=window["ties"],
+                    win_rate=win_rate,
+                    tr_delta=format_signed(window["tr_delta"], 0),
+                    opp_tr=format_number(window["avg_opponent_tr"]),
+                    form=window["form"],
+                ),
             )
         )
 
     if peak_weekday or peak_hour:
         print()
-        print("Activity Pattern")
+        print(localized_text(lang, "活躍模式", "Activity Pattern"))
         if peak_weekday:
             weekday, count = peak_weekday
-            print(f"  Most active weekday: {weekday} ({count} matches)")
+            print("  " + localized_text(lang, f"最常玩的星期: {localized_weekday(weekday, lang)} ({count} 場)", f"Most active weekday: {weekday} ({count} matches)"))
         if peak_hour:
             hour, count = peak_hour
-            print(f"  Peak hour: {hour:02d}:00-{hour:02d}:59 {tz.key} ({count} matches)")
+            print("  " + localized_text(lang, f"尖峰時段: {hour:02d}:00-{hour:02d}:59 {tz.key} ({count} 場)", f"Peak hour: {hour:02d}:00-{hour:02d}:59 {tz.key} ({count} matches)"))
 
     print()
-    print("Tilt / Slump Proxies")
+    print(localized_text(lang, "Tilt / 低潮代理指標", "Tilt / Slump Proxies"))
     print(
-        "  3+ loss streaks observed: {count}  |  Longest loss cluster: L{longest}".format(
-            count=len(slump_runs),
-            longest=max(slump_runs) if slump_runs else 0,
+        "  " + localized_text(
+            lang,
+            "出現過 3 連敗以上的次數: {count}  |  最長連敗群: L{longest}".format(
+                count=len(slump_runs),
+                longest=max(slump_runs) if slump_runs else 0,
+            ),
+            "3+ loss streaks observed: {count}  |  Longest loss cluster: L{longest}".format(
+                count=len(slump_runs),
+                longest=max(slump_runs) if slump_runs else 0,
+            ),
         )
     )
     print(
-        "  After 1 loss: next match WR {next_match} ({samples} samples)  |  next 3 matches WR {next_window}".format(
-            next_match=format_rate(post_loss_1["next_match_win_rate"]),
-            samples=post_loss_1["samples"],
-            next_window=format_rate(post_loss_1["next_window_win_rate"]),
+        "  " + localized_text(
+            lang,
+            "輸 1 場後: 下一場勝率 {next_match} ({samples} 筆)  |  接下來 3 場勝率 {next_window}".format(
+                next_match=format_rate(post_loss_1["next_match_win_rate"]),
+                samples=post_loss_1["samples"],
+                next_window=format_rate(post_loss_1["next_window_win_rate"]),
+            ),
+            "After 1 loss: next match WR {next_match} ({samples} samples)  |  next 3 matches WR {next_window}".format(
+                next_match=format_rate(post_loss_1["next_match_win_rate"]),
+                samples=post_loss_1["samples"],
+                next_window=format_rate(post_loss_1["next_window_win_rate"]),
+            ),
         )
     )
     print(
-        "  After 2-loss streak: next match WR {next_match} ({samples} samples)  |  next 3 matches WR {next_window}".format(
-            next_match=format_rate(post_loss_2["next_match_win_rate"]),
-            samples=post_loss_2["samples"],
-            next_window=format_rate(post_loss_2["next_window_win_rate"]),
+        "  " + localized_text(
+            lang,
+            "2 連敗後: 下一場勝率 {next_match} ({samples} 筆)  |  接下來 3 場勝率 {next_window}".format(
+                next_match=format_rate(post_loss_2["next_match_win_rate"]),
+                samples=post_loss_2["samples"],
+                next_window=format_rate(post_loss_2["next_window_win_rate"]),
+            ),
+            "After 2-loss streak: next match WR {next_match} ({samples} samples)  |  next 3 matches WR {next_window}".format(
+                next_match=format_rate(post_loss_2["next_match_win_rate"]),
+                samples=post_loss_2["samples"],
+                next_window=format_rate(post_loss_2["next_window_win_rate"]),
+            ),
         )
     )
     print(
-        "  After 3-loss streak: next match WR {next_match} ({samples} samples)  |  next 3 matches WR {next_window}".format(
-            next_match=format_rate(post_loss_3["next_match_win_rate"]),
-            samples=post_loss_3["samples"],
-            next_window=format_rate(post_loss_3["next_window_win_rate"]),
+        "  " + localized_text(
+            lang,
+            "3 連敗後: 下一場勝率 {next_match} ({samples} 筆)  |  接下來 3 場勝率 {next_window}".format(
+                next_match=format_rate(post_loss_3["next_match_win_rate"]),
+                samples=post_loss_3["samples"],
+                next_window=format_rate(post_loss_3["next_window_win_rate"]),
+            ),
+            "After 3-loss streak: next match WR {next_match} ({samples} samples)  |  next 3 matches WR {next_window}".format(
+                next_match=format_rate(post_loss_3["next_match_win_rate"]),
+                samples=post_loss_3["samples"],
+                next_window=format_rate(post_loss_3["next_window_win_rate"]),
+            ),
         )
     )
     print(
-        "  Quick requeue after loss (<=10m): next match WR {win_rate} ({samples} samples, avg gap {gap}m)".format(
-            win_rate=format_rate(quick_requeue["fast"]["next_match_win_rate"]),
-            samples=quick_requeue["fast"]["samples"],
-            gap=format_number(quick_requeue["fast"]["avg_gap_minutes"], 1),
+        "  " + localized_text(
+            lang,
+            "輸球後快速重排 (<=10 分): 下一場勝率 {win_rate} ({samples} 筆，平均間隔 {gap} 分)".format(
+                win_rate=format_rate(quick_requeue["fast"]["next_match_win_rate"]),
+                samples=quick_requeue["fast"]["samples"],
+                gap=format_number(quick_requeue["fast"]["avg_gap_minutes"], 1),
+            ),
+            "Quick requeue after loss (<=10m): next match WR {win_rate} ({samples} samples, avg gap {gap}m)".format(
+                win_rate=format_rate(quick_requeue["fast"]["next_match_win_rate"]),
+                samples=quick_requeue["fast"]["samples"],
+                gap=format_number(quick_requeue["fast"]["avg_gap_minutes"], 1),
+            ),
         )
     )
     print(
-        "  Cooldown after loss (30-180m): next match WR {win_rate} ({samples} samples, avg gap {gap}m)".format(
-            win_rate=format_rate(quick_requeue["cooldown"]["next_match_win_rate"]),
-            samples=quick_requeue["cooldown"]["samples"],
-            gap=format_number(quick_requeue["cooldown"]["avg_gap_minutes"], 1),
+        "  " + localized_text(
+            lang,
+            "輸球後冷卻再排 (30-180 分): 下一場勝率 {win_rate} ({samples} 筆，平均間隔 {gap} 分)".format(
+                win_rate=format_rate(quick_requeue["cooldown"]["next_match_win_rate"]),
+                samples=quick_requeue["cooldown"]["samples"],
+                gap=format_number(quick_requeue["cooldown"]["avg_gap_minutes"], 1),
+            ),
+            "Cooldown after loss (30-180m): next match WR {win_rate} ({samples} samples, avg gap {gap}m)".format(
+                win_rate=format_rate(quick_requeue["cooldown"]["next_match_win_rate"]),
+                samples=quick_requeue["cooldown"]["samples"],
+                gap=format_number(quick_requeue["cooldown"]["avg_gap_minutes"], 1),
+            ),
         )
     )
     print(
-        "  After upset losses (opp <= self-250 TR): next match WR {next_match} ({samples} samples)  |  next 3 matches WR {next_window}".format(
-            next_match=format_rate(upset_recovery["upset"]["next_match_win_rate"]),
-            samples=upset_recovery["upset"]["samples"],
-            next_window=format_rate(upset_recovery["upset"]["next_window_win_rate"]),
+        "  " + localized_text(
+            lang,
+            "爆冷敗場後 (對手 <= 自己-250 TR): 下一場勝率 {next_match} ({samples} 筆)  |  接下來 3 場勝率 {next_window}".format(
+                next_match=format_rate(upset_recovery["upset"]["next_match_win_rate"]),
+                samples=upset_recovery["upset"]["samples"],
+                next_window=format_rate(upset_recovery["upset"]["next_window_win_rate"]),
+            ),
+            "After upset losses (opp <= self-250 TR): next match WR {next_match} ({samples} samples)  |  next 3 matches WR {next_window}".format(
+                next_match=format_rate(upset_recovery["upset"]["next_match_win_rate"]),
+                samples=upset_recovery["upset"]["samples"],
+                next_window=format_rate(upset_recovery["upset"]["next_window_win_rate"]),
+            ),
         )
     )
     print(
-        "  After other losses: next match WR {next_match} ({samples} samples)  |  next 3 matches WR {next_window}".format(
-            next_match=format_rate(upset_recovery["other"]["next_match_win_rate"]),
-            samples=upset_recovery["other"]["samples"],
-            next_window=format_rate(upset_recovery["other"]["next_window_win_rate"]),
+        "  " + localized_text(
+            lang,
+            "一般敗場後: 下一場勝率 {next_match} ({samples} 筆)  |  接下來 3 場勝率 {next_window}".format(
+                next_match=format_rate(upset_recovery["other"]["next_match_win_rate"]),
+                samples=upset_recovery["other"]["samples"],
+                next_window=format_rate(upset_recovery["other"]["next_window_win_rate"]),
+            ),
+            "After other losses: next match WR {next_match} ({samples} samples)  |  next 3 matches WR {next_window}".format(
+                next_match=format_rate(upset_recovery["other"]["next_match_win_rate"]),
+                samples=upset_recovery["other"]["samples"],
+                next_window=format_rate(upset_recovery["other"]["next_window_win_rate"]),
+            ),
         )
     )
 
     print()
-    print("Session Fatigue")
+    print(localized_text(lang, "Session 疲勞", "Session Fatigue"))
     print(
-        "  Sessions >=6 matches (gap >45m starts new session): {count}  |  Avg session length {length}".format(
-            count=fatigue["qualified_sessions"],
-            length=format_number(fatigue["avg_session_length"], 1),
+        "  " + localized_text(
+            lang,
+            "Session >=6 場（間隔 >45 分視為新 session）: {count}  |  平均 session 長度 {length}".format(
+                count=fatigue["qualified_sessions"],
+                length=format_number(fatigue["avg_session_length"], 1),
+            ),
+            "Sessions >=6 matches (gap >45m starts new session): {count}  |  Avg session length {length}".format(
+                count=fatigue["qualified_sessions"],
+                length=format_number(fatigue["avg_session_length"], 1),
+            ),
         )
     )
     print(
-        "  First half WR {first}  |  Second half WR {second}  |  Worse second half in {worse} sessions".format(
-            first=format_rate(fatigue["first_half_win_rate"]),
-            second=format_rate(fatigue["second_half_win_rate"]),
-            worse=fatigue["worse_second_half"],
+        "  " + localized_text(
+            lang,
+            "前半段勝率 {first}  |  後半段勝率 {second}  |  後半段更差的 session 數 {worse}".format(
+                first=format_rate(fatigue["first_half_win_rate"]),
+                second=format_rate(fatigue["second_half_win_rate"]),
+                worse=fatigue["worse_second_half"],
+            ),
+            "First half WR {first}  |  Second half WR {second}  |  Worse second half in {worse} sessions".format(
+                first=format_rate(fatigue["first_half_win_rate"]),
+                second=format_rate(fatigue["second_half_win_rate"]),
+                worse=fatigue["worse_second_half"],
+            ),
         )
     )
 
     if recent_records:
         print()
-        print("Detailed Match Resilience")
+        print(localized_text(lang, "詳細對戰韌性", "Detailed Match Resilience"))
         print(
-            "  Detailed records inspected: {count}".format(
-                count=resilience["sample_size"],
+            "  " + localized_text(
+                lang,
+                "檢查的詳細 records: {count}".format(
+                    count=resilience["sample_size"],
+                ),
+                "Detailed records inspected: {count}".format(
+                    count=resilience["sample_size"],
+                ),
             )
         )
         print(
-            "  After dropping round 1: match WR {win_rate} ({samples} matches)".format(
-                win_rate=format_rate(resilience["after_round1_loss_win_rate"]),
-                samples=resilience["after_round1_loss_samples"],
+            "  " + localized_text(
+                lang,
+                "第 1 局先輸後: 整場勝率 {win_rate} ({samples} 場)".format(
+                    win_rate=format_rate(resilience["after_round1_loss_win_rate"]),
+                    samples=resilience["after_round1_loss_samples"],
+                ),
+                "After dropping round 1: match WR {win_rate} ({samples} matches)".format(
+                    win_rate=format_rate(resilience["after_round1_loss_win_rate"]),
+                    samples=resilience["after_round1_loss_samples"],
+                ),
             )
         )
         print(
-            "  After winning round 1: match WR {win_rate} ({samples} matches)".format(
-                win_rate=format_rate(resilience["after_round1_win_win_rate"]),
-                samples=resilience["after_round1_win_samples"],
+            "  " + localized_text(
+                lang,
+                "第 1 局先贏後: 整場勝率 {win_rate} ({samples} 場)".format(
+                    win_rate=format_rate(resilience["after_round1_win_win_rate"]),
+                    samples=resilience["after_round1_win_samples"],
+                ),
+                "After winning round 1: match WR {win_rate} ({samples} matches)".format(
+                    win_rate=format_rate(resilience["after_round1_win_win_rate"]),
+                    samples=resilience["after_round1_win_samples"],
+                ),
             )
         )
         print(
-            "  From 0-2 down: comeback rate {win_rate} ({samples} matches)".format(
-                win_rate=format_rate(resilience["zero_two_comeback_rate"]),
-                samples=resilience["zero_two_samples"],
+            "  " + localized_text(
+                lang,
+                "從 0:2 落後開始: 翻盤率 {win_rate} ({samples} 場)".format(
+                    win_rate=format_rate(resilience["zero_two_comeback_rate"]),
+                    samples=resilience["zero_two_samples"],
+                ),
+                "From 0-2 down: comeback rate {win_rate} ({samples} matches)".format(
+                    win_rate=format_rate(resilience["zero_two_comeback_rate"]),
+                    samples=resilience["zero_two_samples"],
+                ),
             )
         )
         print(
-            "  Next match after close 2-3 loss: WR {win_rate} ({samples} samples)".format(
-                win_rate=format_rate(resilience["close_loss_next_match_win_rate"]),
-                samples=resilience["close_loss_samples"],
+            "  " + localized_text(
+                lang,
+                "2:3 惜敗後的下一場: 勝率 {win_rate} ({samples} 筆)".format(
+                    win_rate=format_rate(resilience["close_loss_next_match_win_rate"]),
+                    samples=resilience["close_loss_samples"],
+                ),
+                "Next match after close 2-3 loss: WR {win_rate} ({samples} samples)".format(
+                    win_rate=format_rate(resilience["close_loss_next_match_win_rate"]),
+                    samples=resilience["close_loss_samples"],
+                ),
             )
         )
         print(
-            "  Next match after 0-3 / 1-3 loss: WR {win_rate} ({samples} samples)".format(
-                win_rate=format_rate(resilience["blowout_loss_next_match_win_rate"]),
-                samples=resilience["blowout_loss_samples"],
+            "  " + localized_text(
+                lang,
+                "0:3 / 1:3 較大比分輸掉後的下一場: 勝率 {win_rate} ({samples} 筆)".format(
+                    win_rate=format_rate(resilience["blowout_loss_next_match_win_rate"]),
+                    samples=resilience["blowout_loss_samples"],
+                ),
+                "Next match after 0-3 / 1-3 loss: WR {win_rate} ({samples} samples)".format(
+                    win_rate=format_rate(resilience["blowout_loss_next_match_win_rate"]),
+                    samples=resilience["blowout_loss_samples"],
+                ),
             )
         )
 
@@ -1675,7 +2051,7 @@ def main() -> int:
     try:
         tz = ZoneInfo(args.timezone)
     except Exception as exc:
-        print(f"Invalid timezone: {args.timezone} ({exc})", file=sys.stderr)
+        print(localized_text(args.lang, f"無效的時區: {args.timezone} ({exc})", f"Invalid timezone: {args.timezone} ({exc})"), file=sys.stderr)
         return 2
 
     session_id = f"tetr-cli-{uuid.uuid4()}"
@@ -1718,12 +2094,13 @@ def main() -> int:
         snapshot=snapshot,
         recent_size=max(1, args.recent),
         tz=tz,
+        lang=args.lang,
     )
 
     if args.csv:
-        write_csv(args.csv, matches, tz)
+        write_csv(args.csv, matches, tz, args.lang)
         print()
-        print(f"CSV exported to: {args.csv}")
+        print(localized_text(args.lang, f"CSV 已匯出至: {args.csv}", f"CSV exported to: {args.csv}"))
 
     if html_report_path:
         write_html_report(
@@ -1734,9 +2111,10 @@ def main() -> int:
             recent_records=recent_records,
             snapshot=snapshot,
             tz=tz,
+            lang=args.lang,
         )
         print()
-        print(f"HTML report written to: {html_report_path}")
+        print(localized_text(args.lang, f"HTML 報表已輸出至: {html_report_path}", f"HTML report written to: {html_report_path}"))
 
     return 0
 

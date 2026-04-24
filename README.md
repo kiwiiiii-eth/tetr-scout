@@ -17,6 +17,7 @@ English summary: TETR Scout combines a floating Chrome overlay with CLI / HTML a
 
 ### CLI / HTML analyzer
 
+- 支援 `中文 / English / 中英並列` 輸出
 - 目前牌位、TR、Glicko、GXE
 - 近 10 / 20 / 50 場勝率
 - 目前連勝/連敗、最佳連勝/連敗
@@ -40,6 +41,7 @@ English summary: TETR Scout combines a floating Chrome overlay with CLI / HTML a
 - 點球後從側邊彈出 compact 面板
 - `More` 才展開較長內容
 - active match 場景會自動收回，避免遮住對戰資訊
+- 會依瀏覽器語言自動顯示繁中或英文 UI
 - 候選玩家名會綜合 `DOM`、頁面自己的 `fetch / WebSocket` 線索，以及 canvas text hook
 - 透過官方 `TETRA CHANNEL API` 顯示公開 `TETRA LEAGUE` 摘要
 
@@ -53,6 +55,13 @@ python3 analyze_tetr.py <username>
 
 ```bash
 python3 analyze_tetr.py osk --recent 30 --timezone Asia/Taipei
+```
+
+預設輸出語言是中文；如果你想切成英文或中英並列：
+
+```bash
+python3 analyze_tetr.py osk --lang en
+python3 analyze_tetr.py osk --lang both
 ```
 
 如果你想把 `leagueflow` 匯出成 CSV：
