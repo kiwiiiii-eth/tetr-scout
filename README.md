@@ -118,12 +118,6 @@ python3 analyze_tetr.py osk --records-limit all --html-report output/osk_full_re
 
 目前這版定位是保守版公開資料 overlay，比較適合在大廳、玩家頁、配對前後、觀戰與一般瀏覽場景使用。
 
-## Support
-
-如果 `TETR Scout` 對你有幫助，想請我喝杯咖啡，可以用 Base：
-
-`0x942B3968c0778DD3dDE5Ae3C81DE845744Bf0be9`
-
 ## Roadmap
 
 - 對手強度更細分桶，例如「高自己 400 TR / 低自己 400 TR」

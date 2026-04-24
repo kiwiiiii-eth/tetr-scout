@@ -23,12 +23,6 @@ Chrome extension plus analysis tools for public TETR.IO league stats, recent for
 - `javascript`
 - `stats`
 
-## Support
-
-Base wallet:
-
-`0x942B3968c0778DD3dDE5Ae3C81DE845744Bf0be9`
-
 ## First Release
 
 ### Title
